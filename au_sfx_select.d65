@@ -1,0 +1,29 @@
+
+
+
+.segment "PRG"
+	
+	dSFX_Select_Beep_Data:
+		.byte %0010
+		.addr @chn2
+		
+		@chn1:
+	
+	
+		@chn2:
+			;							Vol		Duty	Delay
+			_AUDCMD audcmd_init,		8,		2,		1
+			_AUDCMD audcmd_rebase,		3
+			
+			@subloop1_chn2:
+			;			Note	Len
+			_AUDNOTE	12,		4
+			_AUDNOTE	14,		5
+			_AUDCMD audcmd_stop
+			
+			
+		@chn3:
+			
+			
+		@chn4:
+		
