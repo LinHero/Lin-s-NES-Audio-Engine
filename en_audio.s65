@@ -10,7 +10,7 @@ Maintains:		A, X, -, F
 Destroys:		-, -, Y, -
 
 Arguments:
-	Y		= SFX ID * 4
+	Y		= SFX ID
 Returns:
 		Nothing
 */
