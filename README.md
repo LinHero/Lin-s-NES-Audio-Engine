@@ -11,6 +11,10 @@ While not nessecary, I do HIGHLY recommend to keep the zChn_Data pointers IN the
 zAPU_Sound				:= $000C
 zAPU_Music				:= $000D
 
+zSound_Buffer_ID		:= $0018
+zSound_Buffer_Priority	:= $0019
+zMusic_Buffer_ID		:= $001A
+
 zChn_Data_Lo			:= $00D0
 zChn_Data_Hi			:= $00D1
 
