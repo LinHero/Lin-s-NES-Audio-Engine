@@ -181,13 +181,13 @@ Returns:
 				;Channels 1 2 3
 				mb y := wAudio_Period_Index[ x ] + wAudio_Period_Base[ x ]
 				
-				lda dAudio_Periods_Lo, y
+				lda dAudio_Periods_Lo - 1, y
 				clc
 				adc wAudio_Vibrato_Lo, x
 				pha
 				
 				
-				lda dAudio_Periods_Hi, y
+				lda dAudio_Periods_Hi - 1, y
 				adc wAudio_Vibrato_Hi, x
 				sta zNMI_Var + 7
 				
@@ -369,7 +369,7 @@ Returns:
 	.proc stop_func_audcmd
 		jsr silence_current_channel
 		
-		;Stop has to eject the whole update process early
+		;STOP has to eject the whole update process early
 		pla
 		pla
 		pla
@@ -377,8 +377,6 @@ Returns:
 		lda #0
 		rts
 	.endproc
-
-
 
 	.proc volume_func_audcmd
 		jsr read_chn_byte
@@ -489,5 +487,3 @@ Returns:
 	endif
 	rts
 .endproc
-
-.out .sprintf("Size: %i", ($ - init_sound) + vCONST_AUDIO_DAT)
