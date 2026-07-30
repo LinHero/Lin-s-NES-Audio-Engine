@@ -174,7 +174,11 @@ Returns:
 			
 			if cpy #%11_00 == zero
 				;Channels 4
-				mb rAPU_N1_NOISE := wAudio_Period_Index[ x ] | wAudio_Vibrato_Def[ x ]
+				lda wAudio_Period_Base[ x ]
+				asl
+				asl
+				
+				mb rAPU_N1_NOISE := a | wAudio_Period_Index[ x ]
 				mb rAPU_N1_LENGTH := #%0000_1000
 				
 			else
