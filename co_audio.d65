@@ -3,7 +3,7 @@
 
 .segment "PRG"
 
-;Period Values
+;Period Values, thanks to the NESDEV wiki, where I got this table. https://www.nesdev.org/wiki/APU_period_table
 	dAudio_Periods_Lo:
 		.byte $f1, $7f, $13, $ad, $4d, $f3, $9d, $4c, $00, $b8, $74, $34
 		.byte $f8, $bf, $89, $56, $26, $f9, $ce, $a6, $80, $5c, $3a, $1a
@@ -22,17 +22,25 @@
 		.byte $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00
 		.byte $00, $00, $00, $00, $00, $00, $00, $00
 	
-	
+
+	;Vibrato and Tremolo both work the same way
+	;The first value is the amount of frames it takes between each step
+	;Each step being in the order of +I, -I, -I, +I, taking the given frames to shift the change to the next/wrap around
+	;The next is the intensity value that controls how much is changed every step
+	;It is recommended to keep it a negative, I don't know what happens when it is positive
+
 	dVibrato_Defs:
 		.byte 5, <-8
 	
 	dTremolo_Defs:
 		.byte 10, <-4
-	
-	vCONST_AUDIO_DAT := $ - dAudio_Periods_Lo
+
+
+	;The format for Defs is simple, the first byte is the proirity
+	;The second is the address to the data,
 	
 	dSound_Defs:
-		sfx_selector_def := ($ - dSound_Defs) + 3
+		sfx_selector_def := ($ - dSound_Defs) + 3			;<- This is a small addition I use to easily make semi-auto adjusting enums, it is NOT nessecary
 			.byte $20
 			.addr dSFX_Select_Beep_Data
 	
