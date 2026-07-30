@@ -46,11 +46,21 @@
 		.elseif(type = audcmd_vibrato || type = audcmd_tremolo)
 			.byte arg0 << 1
 			
-		.else
-			
+		.elseif(type = audcmd_volume)
+			.byte ((arg0 & $0F) << 4) | %0000_1000
+
+		.elseif(type = audcmd_duty)
+			.byte ((arg0 & $03) << 6 ) | %0011_0000
+
+		.elseif(type = audcmd_delay)
+			.byte arg0
+
 		.endif
 	.else
-		;Rebase
+		;Rebase	
+		;Every note is the (base * 4) + the note's index (Unless index is 0),
+		;Increasing the base by 1, moves all notes up 4
+		;This is uncapped so you can end up reading WELL past the table and into the vib table/ trem tables
 		.byte arg0 & $0F
 		
 	.endif
