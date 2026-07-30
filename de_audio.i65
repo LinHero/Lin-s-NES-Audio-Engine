@@ -1,0 +1,57 @@
+
+
+
+.segment "PRG"
+
+.enum
+	audcmd_init			= 0
+	audcmd_loop			= 1
+	audcmd_jump			= 2
+	audcmd_stop			= 3
+	
+	audcmd_volume		= 4
+	audcmd_duty			= 5
+	audcmd_sweep		= 6
+	audcmd_delay		= 7
+	
+	audcmd_vibrato		= 8
+	audcmd_tremolo		= 9
+	
+	audcmd_rebase		= 200
+
+.endenum
+
+
+.macro _AUDNOTE index, len
+	.byte (index & %000_11111) | ((len & %00000_100) << 3) | ((len & %00000_001) << 7) | ((len & %00000_010) << 5)
+.endmacro
+
+
+.macro _AUDCMD type, arg0, arg1, arg2, arg3
+	.if(type <> audcmd_rebase)
+		.byte type | $10
+		
+		.if(type = audcmd_loop)
+			.byte arg0
+			.addr arg1
+			
+		.elseif(type = audcmd_jump)
+			.addr arg0
+			
+		.elseif(type = audcmd_init)
+			.byte ((arg0 & $0F) << 4) | %0000_1000
+			.byte ((arg1 & $03) << 6 ) | %0011_0000
+			.byte arg2
+		
+		.elseif(type = audcmd_vibrato || type = audcmd_tremolo)
+			.byte arg0 << 1
+			
+		.else
+			
+		.endif
+	.else
+		;Rebase
+		.byte arg0 & $0F
+		
+	.endif
+.endmacro

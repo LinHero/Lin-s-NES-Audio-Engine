@@ -1,0 +1,493 @@
+
+
+
+.segment "PRG"
+
+
+/*	Set a SFX to play this frame
+
+Maintains:		A, X, -, F
+Destroys:		-, -, Y, -
+
+Arguments:
+	Y		= SFX ID * 4
+Returns:
+		Nothing
+*/
+.proc init_sound
+	php
+	pha
+	stx zReg_X + 4
+	
+	lda dSound_Defs - 3, y
+	if cmp zSound_Buffer_Priority == carry set
+		mb zSound_Buffer_ID := y
+		mb zSound_Buffer_Priority := a
+		
+	endif
+	
+	ldx zReg_X
+	pla
+	plp
+	rts
+.endproc
+
+
+
+/*	Set a SFX to play this frame
+
+Maintains:		A, X, -, F
+Destroys:		-, -, Y, -
+
+Arguments:
+	zNMI 6+7	Pointer to Audio Dat
+	X		= 0 for sounds and 2 for Music
+Returns:
+	A		= Bitmap of Channels in use
+*/
+.proc load_audio_dat
+	ldy #0
+	mb (zNMI_Var + 0) := (zNMI_Var + 6)[ y ]
+	pha
+	
+	iny
+	repeat
+		if lsr (zNMI_Var + 0) == carry set
+			;Load the data
+			mb zChn_Data_Lo[ x ] := (zNMI_Var + 6)[ y ]
+			iny
+			mb zChn_Data_Hi[ x ] := (zNMI_Var + 6)[ y ]
+			iny
+			
+			mb wAudio_Timer[ x ] := #1
+		endif
+	txa
+	axs #< -4
+	until cpx #16 == carry set
+	pla
+	rts
+	
+.endproc
+
+
+/*	Processes the audio for the frame
+
+Maintains:		-, -, -, -
+Destroys:		A, X, Y, F
+
+Arguments:
+		Nothing
+Returns:
+		Nothing
+*/
+.proc update_audio
+	if ldy zSound_Buffer_ID != zero
+		mb zNMI_Var + 6 := dSound_Defs[ y - 2 ]
+		mb zNMI_Var + 7 := dSound_Defs[ y - 1 ]
+		
+		ldx #0
+		jsr load_audio_dat
+		sta zAPU_Sound
+		
+		lda #0
+		mb zSound_Buffer_ID := a
+		mb zSound_Buffer_Priority := a
+	endif
+	
+	if ldy zSound_Buffer_ID != zero
+		mb zNMI_Var + 6 := dMusic_Defs - 2[ y ]
+		mb zNMI_Var + 7 := dMusic_Defs - 1[ y ]
+		
+		ldx #2
+		jsr load_audio_dat
+		sta zAPU_Music
+		
+		lda #0
+		mb zMusic_Buffer_ID := a
+	endif
+
+
+	ldx #0
+	mb zNMI_Var + 0 := x
+	
+	mb rAPU_STATUS := zAPU_Sound | zAPU_Music & #$0F
+	
+	repeat
+		
+		;Update sound
+		if lsr zAPU_Sound == carry set
+			jsr iterate_chn
+			ora zAPU_Sound
+			sta zAPU_Sound
+		endif
+		ror zNMI_Var + 0
+		inx
+		inx
+		
+		;Update music
+		if lsr zAPU_Music == carry set
+			jsr iterate_chn
+			ora zAPU_Music
+			sta zAPU_Music
+		endif
+		lsr zNMI_Var + 0
+		inx
+		inx
+	until cpx #16 == zero
+	rts
+	
+.endproc
+
+
+.proc iterate_chn
+	txa
+	mb zNMI_Var + 1 := a
+	mb zNMI_Var + 2 := a & #%0000_1100
+	
+	
+	cmp #%10_00
+	beq @chn_3
+	bcs @chn_4
+	@chn_12:
+		jsr audio_update
+		jsr vibrato_update
+		jsr tremolo_update
+		
+		jmp @play_audio
+	@chn_3:
+		jsr audio_update
+		jsr vibrato_update
+		
+		jmp @play_audio
+	@chn_4:
+		jsr audio_update
+		jsr tremolo_update
+		
+	@play_audio:
+	if lda (zNMI_Var + 0) == minus clear
+		;Stops music from playing is sound is playing on this channel
+		if lda wAudio_Period_Index[ x ] != zero
+			
+			ldy zNMI_Var + 2
+			mb a := wAudio_Tremolo_Shift[ x ] + wAudio_Volume[ x ]
+			mb rAPU_P1_STATUS[ y ] := a >> 4 | wAudio_Duty[ x ]
+			
+			if cpy #%11_00 == zero
+				;Channels 4
+				mb rAPU_N1_NOISE := wAudio_Period_Index[ x ] | wAudio_Vibrato_Def[ x ]
+				mb rAPU_N1_LENGTH := #%0000_1000
+				
+			else
+				;Channels 1 2 3
+				mb y := wAudio_Period_Index[ x ] + wAudio_Period_Base[ x ]
+				
+				lda dAudio_Periods_Lo, y
+				clc
+				adc wAudio_Vibrato_Lo, x
+				pha
+				
+				
+				lda dAudio_Periods_Hi, y
+				adc wAudio_Vibrato_Hi, x
+				sta zNMI_Var + 7
+				
+				ldy zNMI_Var + 2
+				pla
+				mb rAPU_P1_LO[ y ] := a
+				
+				lda zNMI_Var + 7
+				if cmp wAudio_Period_Hi_Old[ x ] != zero
+					mb wAudio_Period_Hi_Old[ x ] := a
+					mb rAPU_P1_HI[ y ] := a | #%0000_1000
+					
+				endif
+				
+			endif
+		endif
+	endif
+	lda #%0000_1000
+	rts
+	
+.endproc
+
+
+;;==========================================================================================================;;
+;;			Audio Chn Functions																				;;
+;;==========================================================================================================;;
+
+;		Processes the more main audio
+.proc audio_update
+	if dec wAudio_Timer[ x ] != zero
+		rts
+	endif
+	
+	loop_load_chn_bytes:
+		jsr read_chn_byte
+		
+		if a < #%001_00000 
+			;Audio Cmds
+			if a < #%0001_0000
+				;Rebase the note
+				mb wAudio_Period_Base[ x ] := a << 2
+				
+			else
+				;Process special cmds
+				and #$0F
+				asl
+				tay
+				
+				mb (zNMI_Pointer_Lo + 6) := dAudio_Jump_Cmd_Data[ y + 0 ]
+				mb (zNMI_Pointer_Hi + 6) := dAudio_Jump_Cmd_Data[ y + 1 ]
+				jsr do_audcmd_jump
+			endif
+			jmp loop_load_chn_bytes
+		endif
+			;Note
+			tay
+			
+			mb wAudio_Period_Index[ x ] := a & #%000_11111
+			
+			;		Get time and multiply by delay
+			tya
+			mb zNMI_Var + 4 := a & #%111_00000
+			mb zNMI_Var + 5 := wAudio_Delay[ x ]
+			
+			ldy #3
+			lda #0
+			repeat
+				if asl (zNMI_Var + 4) == carry set
+					adc zNMI_Var + 5
+				endif
+				asl zNMI_Var + 5
+			until dey == zero
+			mb wAudio_Timer[ x ] := a
+			
+			
+			;		Reset the channel
+			mb wAudio_Period_Hi_Old[ x ] := #(<-1)
+			
+			mb y := wAudio_Vibrato_Def[ x ]
+			mb wAudio_Vibrato_Timer[ x ] := dVibrato_Defs[ y - 2 ]
+			
+			mb y := wAudio_Tremolo_Def[ x ]
+			mb wAudio_Tremolo_Timer[ x ] := dTremolo_Defs[ y - 2]
+			
+			lda #0
+			mb wAudio_Vibrato_Lo[ x ] := a
+			mb wAudio_Vibrato_Hi[ x ] := a
+			mb wAudio_Vibrato_Length[ x ] := a
+			mb wAudio_Tremolo_Shift[ x ] := a
+			mb wAudio_Tremolo_Length[ x ] := a
+		
+		;	used by other functions, so call is here
+		silence_current_channel:
+			
+			;		Only silence if possible
+			if lda (zNMI_Var + 0) == minus clear
+				
+				ldy zNMI_Var + 2
+				cpy #%10_00
+				beq chn_3
+				bcs chn_4
+				chn_12:
+					lda #$00
+					mb rAPU_P1_STATUS[ y ] := a
+					mb rAPU_P1_LO[ y ] := a
+					
+					mb rAPU_P1_HI[ y ] := #$08
+					
+					jmp finish_silence
+					
+				chn_3:
+					mb rAPU_T1_COUNTER := #$80
+					mb rAPU_COUNTER := #$C0
+					
+					jmp finish_silence
+					
+				chn_4:
+					mb rAPU_STATUS := zAPU_Sound | zAPU_Music & #%0111
+					
+				finish_silence:
+				
+			endif
+			rts
+			
+			
+	do_audcmd_jump:
+		jmp (zNMI_Pointer_Lo + 6)
+	
+	;		Jump cmds
+	dAudio_Jump_Cmd_Data:
+			.addr init_func_audcmd
+			.addr loop_func_audcmd
+			.addr jump_func_audcmd
+			.addr stop_func_audcmd
+	
+			.addr volume_func_audcmd
+			.addr duty_func_audcmd
+			.addr sweep_func_audcmd
+			.addr delay_func_audcmd
+			
+			.addr vibrato_func_audcmd
+			.addr tremolo_func_audcmd
+			
+	
+	;;==========================================================================================================;;
+	;;			Audio Command Functions																			;;
+	;;==========================================================================================================;;
+
+	.proc init_func_audcmd
+		jsr volume_func_audcmd
+		jsr duty_func_audcmd
+		jmp delay_func_audcmd
+	.endproc
+
+	.proc loop_func_audcmd
+		jsr read_chn_byte
+		if ldy wAudio_Loops[ x ] == zero
+			mb wAudio_Loops[ x ] := a
+			bne jump_func_audcmd
+		endif
+		
+		if dec wAudio_Loops[ x ] != zero goto jump_func_audcmd
+		jsr read_chn_byte
+		jsr read_chn_byte
+		rts
+	.endproc
+
+	.proc jump_func_audcmd
+		jsr read_chn_byte
+		tay
+		jsr read_chn_byte
+		
+		mb zChn_Data_Lo[ x ] := y
+		mb zChn_Data_Hi[ x ] := a
+		
+		rts
+	.endproc
+
+	.proc stop_func_audcmd
+		jsr silence_current_channel
+		
+		;Stop has to eject the whole update process early
+		pla
+		pla
+		pla
+		pla
+		lda #0
+		rts
+	.endproc
+
+
+
+	.proc volume_func_audcmd
+		jsr read_chn_byte
+		mb wAudio_Volume[ x ] := a
+		rts
+	.endproc
+
+	.proc duty_func_audcmd
+		jsr read_chn_byte
+		mb wAudio_Duty[ x ] := a
+		rts
+	.endproc
+
+	.proc sweep_func_audcmd
+		jsr read_chn_byte
+		mb wAudio_Sweep[ x ] := a
+		rts
+	.endproc
+
+	.proc delay_func_audcmd
+		jsr read_chn_byte
+		mb wAudio_Delay[ x ] := a
+		rts
+	.endproc
+	
+	
+	.proc vibrato_func_audcmd
+		jsr read_chn_byte
+		mb wAudio_Vibrato_Def[ x ] := a
+		
+		rts
+	.endproc
+	
+	.proc tremolo_func_audcmd
+		jsr read_chn_byte
+		mb wAudio_Tremolo_Def[ x ] := a
+		
+		rts
+	.endproc
+	
+	
+	;;==========================================================================================================;;
+	;;			Audio Generic Functions																			;;
+	;;==========================================================================================================;;
+
+	.proc read_chn_byte
+		mb a := (zChn_Data_Lo[ x ])
+		
+		if inc zChn_Data_Lo[ x ] == zero
+			inc zChn_Data_Hi, x
+		endif
+		rts
+	.endproc
+	
+	
+.endproc
+
+;		Processes the vibrato
+.proc vibrato_update
+	if ldy wAudio_Vibrato_Def[ x ] != zero
+		if dec wAudio_Vibrato_Timer[ x ] == zero
+			mb wAudio_Vibrato_Timer[ x ] := dVibrato_Defs[ y - 2 ]
+			
+			inc wAudio_Vibrato_Length, x
+			
+		endif
+		;Step Vibrato
+		mb a := wAudio_Vibrato_Length[ x ] & #$03
+		tax
+		dex
+		
+		mb a := dVibrato_Defs[ y - 1 ]
+		ldy #$FF
+		if cpx #2 == carry set
+			iny
+			eor #$FF
+		endif
+		ldx zNMI_Var + 1
+		
+		mb wAudio_Vibrato_Lo[ x ] := a +c wAudio_Vibrato_Lo[ x ]
+		tya
+		mb wAudio_Vibrato_Hi[ x ] := a +c wAudio_Vibrato_Hi[ x ]
+	endif
+	rts
+.endproc
+
+;		Processes the tremolo
+.proc tremolo_update
+	if ldy wAudio_Tremolo_Def[ x ] != zero
+		if dec wAudio_Tremolo_Timer[ x ] == zero
+			mb wAudio_Tremolo_Timer[ x ] := dTremolo_Defs[ y - 2 ]
+			
+			inc wAudio_Tremolo_Length, x
+			
+		endif
+		;Step Vibrato
+		mb a := wAudio_Tremolo_Length[ x ] & #$03
+		tax
+		dex
+		
+		mb a := dTremolo_Defs[ y - 1 ]
+		if cpx #2 == carry set
+			eor #$FF
+		endif
+		ldx zNMI_Var + 1
+		
+		mb wAudio_Tremolo_Shift[ x ] := a +c wAudio_Tremolo_Shift[ x ]
+	endif
+	rts
+.endproc
+
+.out .sprintf("Size: %i", ($ - init_sound) + vCONST_AUDIO_DAT)
