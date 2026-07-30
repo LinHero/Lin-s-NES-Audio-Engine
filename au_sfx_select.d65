@@ -8,7 +8,9 @@
 		.addr @chn2			;All you need to provide is the address for used data, DO NOT put NULLPTRs for unused chns
 		
 		@chn1:
-	
+			;I will explain how each channel works here
+			;Pulse Channels 1/2 both work in a simple way, each _AUDNOTE sets the Note + the Base, and Len * Delay
+			;A vibrato and tremolo can be provided, using the macro _AUDCMD audcmd_tremolo/audcmd_vibrato, plus the index into the table (/2)
 	
 		@chn2:
 			;							Vol		Duty	Delay
@@ -22,7 +24,10 @@
 			
 			
 		@chn3:
-			
+			;Triangle Chn works the exact same way and takes the same functions as the Pulse Channels, however it does NOT use tremolo
+			;due to lacking volume control
 			
 		@chn4:
-		
+			;The Noise channel is a bit weird, notes work the same, but the Note is instead the raw period passed to $400E
+			;The note base, (audcmd_rebase) works as the MODE flag (So should only be set to either $00 or $08
+			;Noise does NOT use Vibrato, but it DOES use Tremolo
