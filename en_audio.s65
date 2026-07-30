@@ -63,7 +63,7 @@ Returns:
 		endif
 	txa
 	axs #< -4
-	until cpx #16 == carry set
+	until cpx #14 == carry set
 	pla
 	rts
 	
@@ -172,9 +172,9 @@ Returns:
 			mb a := wAudio_Tremolo_Shift[ x ] + wAudio_Volume[ x ]
 			mb rAPU_P1_STATUS[ y ] := a >> 4 | wAudio_Duty[ x ]
 			
-			if cpy #%11_00 == zero
+			if cpy #%11_00 == carry set
 				;Channels 4
-				lda wAudio_Period_Base[ x ]
+				lda wAudio_Period_Base, x
 				asl
 				asl
 				
@@ -291,8 +291,8 @@ Returns:
 				
 				ldy zNMI_Var + 2
 				cpy #%10_00
-				beq chn_3
 				bcs chn_4
+				beq chn_3
 				chn_12:
 					lda #$00
 					mb rAPU_P1_STATUS[ y ] := a
@@ -300,13 +300,13 @@ Returns:
 					
 					mb rAPU_P1_HI[ y ] := #$08
 					
-					jmp finish_silence
+					bne finish_silence
 					
 				chn_3:
 					mb rAPU_T1_COUNTER := #$80
 					mb rAPU_COUNTER := #$C0
 					
-					jmp finish_silence
+					bne finish_silence
 					
 				chn_4:
 					mb rAPU_STATUS := zAPU_Sound | zAPU_Music & #%0111
@@ -373,7 +373,7 @@ Returns:
 	.proc stop_func_audcmd
 		jsr silence_current_channel
 		
-		;STOP has to eject the whole update process early
+		;Stop has to eject the whole update process early
 		pla
 		pla
 		pla
@@ -381,6 +381,8 @@ Returns:
 		lda #0
 		rts
 	.endproc
+
+
 
 	.proc volume_func_audcmd
 		jsr read_chn_byte
